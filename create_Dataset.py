@@ -69,27 +69,12 @@ class SocialMediaPost(BaseModel):
     # You can add custom validation logic easily with Pydantic.
     @model_validator(mode="before")
     @classmethod
-    def question_ends_with_question_mark(cls, values: dict) -> dict:
-        setup = values.get("setup")
-        if setup and setup[-1] != "?":
-            raise ValueError("Badly formed question!")
+    def validate_data(cls, values: dict) -> dict:
+        # Add validation specific to SocialMediaPost fields if needed
         return values
-    
-class mediaPost(BaseModel):
-    model: list[SocialMediaPost] = Field(description="nothing")
-
-
-
-def clean_output(output: str) -> str:
-    json_match = re.search(r"\[.*\]", output, re.DOTALL)
-    if json_match:
-        return json_match.group(0)
-    raise ValueError("Invalid JSON format detected in model output.")
-
 
 
 def create_dataset():
-
     prompt = '''
         You are a data generator for a social media analytics system. Your task is to create a dataset containing a list of dictionaries. Each dictionary should represent a social media post with realistic values for the following fields, starting with Hashtags and Post Type, and then determining the remaining attributes based on their relationships and trends:
 
@@ -146,7 +131,7 @@ def create_dataset():
     '''
 
     # Set up a parser + inject instructions into the prompt template.
-    parser = PydanticOutputParser(pydantic_object=mediaPost)
+    parser = PydanticOutputParser(pydantic_object=SocialMediaPost)
 
     prompt = PromptTemplate(
         input_variables=[],  # No variables since the prompt is static
@@ -162,26 +147,18 @@ def create_dataset():
 
     prompt_and_model = prompt | model 
     # And a query intended to prompt a language model to populate the data structure.
-    for x in range (1, 100):
-        output = prompt_and_model.invoke({})
-        results = parser.invoke(output)
+    # for x in range (1, 100):
+    output = prompt_and_model.invoke({})
+    print(output)
+    results = parser.invoke(output)
+    print(results)
 
-        for result in results:
-            Answer.append(result)
-
-    for x in range(1, 5):  # Test with a smaller range first
-        try:
-            raw_output = prompt_and_model.invoke({})
-            clean_json = clean_output(raw_output)  # Extract and clean JSON
-            results = parser.parse_result(clean_json)  # Parse the cleaned JSON
-            Answer.extend(results)
-        except Exception as e:
-            print(f"Error processing iteration {x}: {e}")
-
+    # for result in results:
+    #     Answer.append(result)
         
-    output_file = "social_media_data.json"
-    with open(output_file, "w") as json_file:
-        json.dump(Answer, json_file, indent=4)
+    # output_file = "social_media_data.json"
+    # with open(output_file, "w") as json_file:
+    #     json.dump(Answer, json_file, indent=4)
 
 
     # upload_json_data(
