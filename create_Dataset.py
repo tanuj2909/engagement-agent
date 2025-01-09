@@ -1,7 +1,8 @@
-from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.output_parsers import PydanticOutputParser, JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import OpenAI
 from pydantic import BaseModel, Field, model_validator
+from typing import List
 from database import connect_to_database, create_collection, upload_json_data
 import json
 from langchain_mistralai.chat_models import ChatMistralAI
@@ -26,10 +27,11 @@ model = ChatMistralAI(
 class AudienceDemographic(BaseModel):
     age: str = Field(description="The age group of the audience (e.g., '18-24').", example="18-24")
     gender: str = Field(description="The gender of the audience (e.g., 'Male', 'Female').", example="Female")
-    location: str = Field(description="The country of the audience.", example="USA")
+    location: list[str] = Field(description="The country of the audience.", example="USA")
 
+# Define the data model for Social Media Post
 class SocialMediaPost(BaseModel):
-    hashtags: list[str] = Field(
+    hashtags: List[str] = Field(
         description="A list of hashtags associated with the post (1 to 5 hashtags).",
         example=["#trending", "#fitness", "#health"]
     )
@@ -61,18 +63,37 @@ class SocialMediaPost(BaseModel):
             "location": "USA"
         }
     )
+
+    published_date: int = Field(
+        description="how many days ago was this post posted",
+        examples=15
+    )
+
     conversion_rate: float = Field(
         description="The conversion rate of the post as a percentage (e.g., 0.1 to 10%).",
         example=4.5
     )
 
-    # You can add custom validation logic easily with Pydantic.
+    # Custom validation logic for additional consistency checks
     @model_validator(mode="before")
     @classmethod
     def validate_data(cls, values: dict) -> dict:
-        # Add validation specific to SocialMediaPost fields if needed
+        # Add any field-specific or post-specific validation logic here
         return values
+    
+class SocialMediaPostList(BaseModel):
+    posts: list[SocialMediaPost]
 
+    # Custom validation for the list of posts
+    @model_validator(mode="before")
+    @classmethod
+    def validate_posts(cls, values: dict) -> dict:
+        posts = values.get("posts", [])
+        if not posts:
+            raise ValueError("The list of posts cannot be empty.")
+        if len(posts) > 100:
+            raise ValueError("Too many posts. The maximum allowed is 100.")
+        return values
 
 def create_dataset():
     prompt = '''
@@ -115,8 +136,12 @@ def create_dataset():
     A dictionary with fields:
     Age: One of [18-24, 25-34, 35-44, 45-54].
     Gender: One of ["Male", "Female"].
-    Location: Choose from [USA, India, UK, Germany, Brazil, Australia, Canada, France, Japan, South Korea, South Africa, Italy, Spain, Russia, Mexico, Netherlands, China, Sweden, New Zealand, UAE].
+    Location: Choose 2-3 where post went trending from [USA, India, UK, Germany, Brazil, Australia, Canada, France, Japan, South Korea, South Africa, Italy, Spain, Russia, Mexico, Netherlands, China, Sweden, New Zealand, UAE].
     Younger audiences (18-24) are more likely to comment, while older audiences (25-40) are more likely to share.
+
+    Published Time: 
+    select number of days to create attribute that can tell how many days ago was this post posted
+    
     Conversion Rate:
 
     A percentage between 0.1% and 10%.
@@ -131,47 +156,37 @@ def create_dataset():
     '''
 
     # Set up a parser + inject instructions into the prompt template.
-    parser = PydanticOutputParser(pydantic_object=SocialMediaPost)
+    parser = JsonOutputParser(pydantic_object=SocialMediaPostList)
 
+    # Prepare the prompt template with format instructions
     prompt = PromptTemplate(
-        input_variables=[],  # No variables since the prompt is static
+        input_variables=[],
         template=prompt,
         partial_variables={"format_instructions": parser.get_format_instructions()},
     )
 
-    # database = connect_to_database()
+    # Simulated integration with a language model
+    # Replace this section with actual LangChain model setup and invocation
+    print("Generating data...")
 
-    # collection = create_collection(database, "Media Engagement")
-
+    # Generate the output dataset
+    prompt_and_model = prompt | model  # Assuming 'model' is an LLM instance
     Answer = []
+    for x in range(1,20):
+        output = prompt_and_model.invoke({})
+        # print(output)
 
-    prompt_and_model = prompt | model 
-    # And a query intended to prompt a language model to populate the data structure.
-    # for x in range (1, 100):
-    output = prompt_and_model.invoke({})
-    print(output)
-    results = parser.invoke(output)
-    print(results)
-
-    # for result in results:
-    #     Answer.append(result)
+        results = parser.invoke(output)
+        for result in results['posts']:
+            Answer.append(result)
         
-    # output_file = "social_media_data.json"
-    # with open(output_file, "w") as json_file:
-    #     json.dump(Answer, json_file, indent=4)
+    # Parse the output
+    # Optionally print or save results
+    # print(results)
+    
+    output_file = "social_media_data.json"
+    with open(output_file, "w") as json_file:
+        json.dump(Answer, json_file, indent=4)
 
 
-    # upload_json_data(
-    #     collection,
-    #     "social_media_data.json", 
-    #     lambda data: (
-    #         f"hashtags: {', '.join(data['hashtags'])} | "
-    #         f"post_type: {data['post_type']} | "
-    #         f"total_impressions: {data['total_impressions']} | "
-    #         f"comments: {data['comments']} | "
-    #         f"shares: {data['shares']} | "
-    #         f"media_quality: {data['media_quality']} | "
-    #         f"audience: {data['audience_demographic']['age']} {data['audience_demographic']['gender']} {data['audience_demographic']['location']} | "
-    #         f"conversion_rate: {data['conversion_rate']}"
-    #     ),
-    # )
+    
